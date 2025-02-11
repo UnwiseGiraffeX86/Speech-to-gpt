@@ -6,13 +6,21 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 
+// Define the necessary types for the Web Speech API
+interface IWindow extends Window {
+  webkitSpeechRecognition: any;
+  webkitSpeechGrammarList: any;
+}
+
+declare var window: IWindow;
+
 export default function Home() {
   const [isRecording, setIsRecording] = useState(false);
   const [finalTranscript, setFinalTranscript] = useState('');
   const [interimTranscript, setInterimTranscript] = useState('');
   const [response, setResponse] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const recognitionRef = useRef<SpeechRecognition | null>(null);
+  const recognitionRef = useRef<any>(null);
 
   const startRecording = useCallback(() => {
     if (!('webkitSpeechRecognition' in window)) {
@@ -20,16 +28,15 @@ export default function Home() {
       return;
     }
 
-    const recognition = new (window as any).webkitSpeechRecognition();
+    const recognition = new window.webkitSpeechRecognition();
     recognition.continuous = true;
     recognition.interimResults = true;
 
-    // Enable grammar and punctuation
-    const speechRecognitionList = new (window as any).webkitSpeechGrammarList();
+    const speechRecognitionList = new window.webkitSpeechGrammarList();
     recognition.grammars = speechRecognitionList;
     recognition.lang = 'en-US';
 
-    recognition.onresult = (event: SpeechRecognitionEvent) => {
+    recognition.onresult = (event: any) => {
       let currentInterimTranscript = '';
 
       for (let i = event.resultIndex; i < event.results.length; i++) {
@@ -38,7 +45,7 @@ export default function Home() {
         // Process transcript to ensure proper capitalization and punctuation
         const processedTranscript = transcript
           // Capitalize first letter of sentences
-          .replace(/(^\w|\.\s+\w)/g, letter => letter.toUpperCase())
+          .replace(/(^\w|\.\s+\w)/g, (letter: string) => letter.toUpperCase())
           // Add period if sentence ends without punctuation
           .replace(/([a-z])\s+([A-Z])/g, '$1. $2')
           // Ensure space after punctuation
@@ -82,7 +89,7 @@ export default function Home() {
     if (interimTranscript) {
       const processedInterim = interimTranscript
         .trim()
-        .replace(/(^\w|\.\s+\w)/g, letter => letter.toUpperCase());
+        .replace(/(^\w|\.\s+\w)/g, (letter: string) => letter.toUpperCase());
       const lastChar = processedInterim.slice(-1);
       const punctuation = /[.,!?]/.test(lastChar) ? '' : '.';
       setFinalTranscript(prev => {
@@ -106,14 +113,17 @@ export default function Home() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text: fullTranscript }),
       });
-
-      if (!response.ok) throw new Error(response.statusText);
-
+  
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(errorText || response.statusText);
+      }
+  
       const reader = response.body?.getReader();
       const decoder = new TextDecoder();
-
+  
       if (!reader) throw new Error('No reader available');
-
+  
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
@@ -123,7 +133,7 @@ export default function Home() {
       }
     } catch (error) {
       console.error('Error sending to GPT:', error);
-      setResponse('Error: Failed to get response from GPT-4');
+      setResponse(`Error: ${error instanceof Error ? error.message : 'Failed to get response from GPT-4'}`);
     } finally {
       setIsLoading(false);
     }

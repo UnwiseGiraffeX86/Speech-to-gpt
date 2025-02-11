@@ -1,25 +1,36 @@
-import { NextResponse } from 'next/server';
+// app/api/gpt/route.ts
 import { OpenAIStream } from '@/lib/openai';
+import { NextRequest } from 'next/server';
 
 export const runtime = 'edge';
 
-export async function POST(req: Request) {
+// This ensures the API key check happens at build time
+if (!process.env.OPENAI_API_KEY) {
+  throw new Error('Missing OPENAI_API_KEY environment variable');
+}
+
+export async function POST(req: NextRequest) {
   try {
-    const { text } = await req.json();
+    const json = await req.json();
+    const { text } = json;
     
     if (!text) {
-      return NextResponse.json(
-        { error: 'No text provided' },
-        { status: 400 }
-      );
+      return new Response('Missing text in request body', { status: 400 });
     }
 
     const stream = await OpenAIStream(text);
-    return new Response(stream);
+    
+    return new Response(stream, {
+      headers: {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+      },
+    });
   } catch (error) {
     console.error('GPT API error:', error);
-    return NextResponse.json(
-      { error: 'Internal server error' },
+    return new Response(
+      error instanceof Error ? error.message : 'Internal Server Error', 
       { status: 500 }
     );
   }
